@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnergiaCampus - Dashboard</title>
+    <!-- Caminho atualizado: style.css está na raiz -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Importando Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ Monitoramento Energético</h1>
+            <button id="alternar-simulacao" class="simulation-toggle" type="button" aria-pressed="false">
+                ▶ Iniciar simulação
+            </button>
+            <button id="alternar-tema" class="theme-toggle" type="button" aria-pressed="false">
+                <span aria-hidden="true">☾</span> Modo noturno
+            </button>
+        </header>
+
+        <!-- Cards de resumo -->
+        <section class="cards">
+            <div class="card">
+                <h3>Consumo do Mês (kWh)</h3>
+                <p id="consumo-mes">0.00</p>
+            </div>
+            <div class="card">
+                <h3>Média de Potência (W)</h3>
+                <p id="media-potencia">0.00</p>
+            </div>
+            <div class="card">
+                <h3>Total de Leituras</h3>
+                <p id="total-leituras">0</p>
+            </div>
+            <div class="card">
+                <h3>Variação (%)</h3>
+                <p id="variacao">0%</p>
+            </div>
+        </section>
+
+        <!-- Tabela de Ambientes -->
+        <section class="tabela">
+            <h2>Consumo por Ambiente</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nome</th>
+                        <th>Tipo</th>
+                        <th>Consumo (kWh)</th>
+                        <th>Última Potência (W)</th>
+                    </tr>
+                </thead>
+                <tbody id="corpo-tabela">
+                    <!-- Dados serão inseridos aqui via JS -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Gráfico -->
+        <section class="grafico">
+            <h2>Consumo nas Últimas 24 Horas</h2>
+            <canvas id="graficoConsumo"></canvas>
+        </section>
+    </div>
+
+    <!-- Caminho atualizado: dashboard.js está na raiz -->
+    <script src="dashboard.js"></script>
+</body>
+</html>
