@@ -6,13 +6,13 @@
 }
 
 :root {
-    --background: #f4f7f6;
-    --surface: #ffffff;
+    --background: #e8ebed;
+    --surface: #f5f6f7;
     --heading: #2c3e50;
     --text: #333333;
     --muted: #7f8c8d;
     --border: #dddddd;
-    --table-header: #f8f9fa;
+    --table-header: #dfe3e6;
     --shadow: rgba(0, 0, 0, 0.1);
 }
 
