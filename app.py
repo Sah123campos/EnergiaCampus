@@ -119,6 +119,44 @@ def ranking_consumo():
         'consumo_kwh': float(r.total_kwh) if r.total_kwh else 0
     } for r in ranking])
 
+@app.route('/api/relatorio/tecnico', methods=['GET'])
+def analise_tecnica():
+    horas = int(request.args.get('horas', 24))
+    desde = datetime.now() - timedelta(hours=horas)
+    ambientes = Ambiente.query.all()
+    resultado = []
+
+    for amb in ambientes:
+        base = Leitura.query.filter(
+            Leitura.ambiente_id == amb.id,
+            Leitura.data_hora >= desde
+        )
+
+        tensao_media, tensao_pico, potencia_media, fp_media, fp_pico = base.with_entities(
+            func.avg(Leitura.tensao_v),
+            func.max(Leitura.tensao_v),
+            func.avg(Leitura.potencia_w),
+            func.avg(Leitura.fator_pot),
+            func.min(Leitura.fator_pot)
+        ).first()
+
+        # A leitura de maior potência traz também o horário em que o pico ocorreu
+        leitura_pico_potencia = base.order_by(Leitura.potencia_w.desc()).first()
+
+        resultado.append({
+            'id': amb.id,
+            'nome': amb.nome,
+            'tensao_media': float(tensao_media) if tensao_media is not None else 0,
+            'tensao_pico': float(tensao_pico) if tensao_pico is not None else 0,
+            'potencia_media_kw': float(potencia_media) / 1000 if potencia_media is not None else 0,
+            'potencia_pico_kw': float(leitura_pico_potencia.potencia_w) / 1000 if leitura_pico_potencia else 0,
+            'potencia_pico_hora': leitura_pico_potencia.data_hora.isoformat() if leitura_pico_potencia else None,
+            'fp_media': float(fp_media) if fp_media is not None else 0,
+            'fp_pico': float(fp_pico) if fp_pico is not None else None
+        })
+
+    return jsonify(resultado)
+
 @app.route('/api/relatorio/mensal', methods=['GET'])
 def resumo_mensal():
     mes_atual = datetime.now().replace(day=1)

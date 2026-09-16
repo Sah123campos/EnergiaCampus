@@ -164,3 +164,12 @@ th {
 canvas {
     max-height: 300px;
 }
+
+.status-ok {
+    color: #27ae60;
+}
+
+.status-alerta {
+    color: #e74c3c;
+    font-weight: 600;
+}

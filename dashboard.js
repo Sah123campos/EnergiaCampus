@@ -45,6 +45,9 @@ async function carregarDados() {
             carregarGrafico(primeiroAmbienteId);
         }
 
+        // 4. Buscar análise técnica (tensão, potência ativa, fator de potência)
+        await carregarAnaliseTecnica();
+
     } catch (error) {
         console.error("Erro ao carregar dados:", error);
         ativarModoLocal();
@@ -99,7 +102,149 @@ function renderizarDadosLocais() {
         corpoTabela.appendChild(row);
     });
 
+    renderizarAnaliseTecnica(calcularAnaliseLocal());
     carregarGrafico(ambientesMonitorados[0].id);
+}
+
+// ----------------- ANÁLISE TÉCNICA (Tensão, Potência Ativa, Fator de Potência) -----------------
+
+const TENSAO_NOMINAL = 127.0;
+const TENSAO_TOLERANCIA_PCT = 0.05; // faixa adequada: ±5% (ANEEL/Prodist, simplificado)
+const FP_MINIMO = 0.92; // mínimo regulatório ANEEL/Prodist para fator de potência
+const POTENCIA_ANOMALIA_FATOR = 1.4; // pico 40% acima da média = anomalia de demanda
+
+function formatarHora(ts) {
+    return ts ? new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--';
+}
+
+function diagnosticarTensao(pico) {
+    const limite = TENSAO_NOMINAL * (1 + TENSAO_TOLERANCIA_PCT);
+    const sobretensao = pico > limite;
+    return {
+        picoTexto: `${pico.toFixed(1)} V ${sobretensao ? '⚠️ Sobretensão' : '✅ Normal'}`,
+        diagnostico: sobretensao
+            ? `⚠️ Sobretensão detectada (acima de ${limite.toFixed(1)} V) — verificar a instalação elétrica`
+            : 'Tensão dentro da faixa adequada',
+        status: sobretensao ? 'alerta' : 'ok'
+    };
+}
+
+function diagnosticarPotencia(media, pico, horaPico) {
+    const anomalia = media > 0 && pico > media * POTENCIA_ANOMALIA_FATOR;
+    const hora = formatarHora(horaPico);
+    return {
+        picoTexto: `${pico.toFixed(2)} kW às ${hora}${anomalia ? ' ⚠️' : ''}`,
+        diagnostico: anomalia
+            ? `⚠️ Pico de demanda anômalo às ${hora} — verificar cargas simultâneas`
+            : 'Consumo estável',
+        status: anomalia ? 'alerta' : 'ok'
+    };
+}
+
+function diagnosticarFatorPotencia(pico) {
+    const indutivo = pico !== null && pico !== undefined && pico < FP_MINIMO;
+    return {
+        picoTexto: (pico !== null && pico !== undefined)
+            ? `${pico.toFixed(2)} ${indutivo ? '⚠️ Indutivo' : '✅ Normal'}`
+            : '--',
+        diagnostico: indutivo
+            ? '⚠️ Corrigir fator de potência — instalar banco de capacitores (carga indutiva)'
+            : 'Fator de potência adequado',
+        status: indutivo ? 'alerta' : 'ok'
+    };
+}
+
+function renderizarAnaliseTecnica(lista) {
+    const corpoTensao = document.getElementById('corpo-tensao');
+    const corpoPotencia = document.getElementById('corpo-potencia');
+    const corpoFp = document.getElementById('corpo-fp');
+
+    corpoTensao.innerHTML = '';
+    corpoPotencia.innerHTML = '';
+    corpoFp.innerHTML = '';
+
+    lista.forEach(item => {
+        const tensao = diagnosticarTensao(item.tensaoPico);
+        const linhaTensao = document.createElement('tr');
+        linhaTensao.innerHTML = `
+            <td>${item.nome}</td>
+            <td>${item.tensaoMedia.toFixed(1)} V</td>
+            <td>${tensao.picoTexto}</td>
+            <td class="status-${tensao.status}">${tensao.diagnostico}</td>
+        `;
+        corpoTensao.appendChild(linhaTensao);
+
+        const potencia = diagnosticarPotencia(item.potenciaMediaKw, item.potenciaPicoKw, item.potenciaPicoHora);
+        const linhaPotencia = document.createElement('tr');
+        linhaPotencia.innerHTML = `
+            <td>${item.nome}</td>
+            <td>${item.potenciaMediaKw.toFixed(2)} kW</td>
+            <td>${potencia.picoTexto}</td>
+            <td class="status-${potencia.status}">${potencia.diagnostico}</td>
+        `;
+        corpoPotencia.appendChild(linhaPotencia);
+
+        const fp = diagnosticarFatorPotencia(item.fpPico);
+        const linhaFp = document.createElement('tr');
+        linhaFp.innerHTML = `
+            <td>${item.nome}</td>
+            <td>${item.fpMedia.toFixed(2)}</td>
+            <td>${fp.picoTexto}</td>
+            <td class="status-${fp.status}">${fp.diagnostico}</td>
+        `;
+        corpoFp.appendChild(linhaFp);
+    });
+}
+
+async function carregarAnaliseTecnica() {
+    const resTecnico = await fetch('/api/relatorio/tecnico?horas=24');
+    const dados = await resTecnico.json();
+
+    const lista = dados.map(d => ({
+        nome: d.nome,
+        tensaoMedia: d.tensao_media,
+        tensaoPico: d.tensao_pico,
+        potenciaMediaKw: d.potencia_media_kw,
+        potenciaPicoKw: d.potencia_pico_kw,
+        potenciaPicoHora: d.potencia_pico_hora,
+        fpMedia: d.fp_media,
+        fpPico: d.fp_pico
+    }));
+
+    renderizarAnaliseTecnica(lista);
+}
+
+function calcularAnaliseLocal() {
+    return ambientesMonitorados.map(ambiente => {
+        const leituras = leiturasLocais.filter(leitura => leitura.ambiente_id === ambiente.id);
+
+        if (leituras.length === 0) {
+            return {
+                nome: ambiente.nome,
+                tensaoMedia: 0, tensaoPico: 0,
+                potenciaMediaKw: 0, potenciaPicoKw: 0, potenciaPicoHora: null,
+                fpMedia: 0, fpPico: null
+            };
+        }
+
+        const tensaoMedia = leituras.reduce((total, l) => total + l.tensao_v, 0) / leituras.length;
+        const tensaoPico = Math.max(...leituras.map(l => l.tensao_v));
+
+        const potenciaMediaKw = (leituras.reduce((total, l) => total + l.potencia_w, 0) / leituras.length) / 1000;
+        const leituraPicoPotencia = leituras.reduce((maior, l) => l.potencia_w > maior.potencia_w ? l : maior, leituras[0]);
+
+        const fpMedia = leituras.reduce((total, l) => total + l.fator_pot, 0) / leituras.length;
+        const fpPico = Math.min(...leituras.map(l => l.fator_pot));
+
+        return {
+            nome: ambiente.nome,
+            tensaoMedia, tensaoPico,
+            potenciaMediaKw,
+            potenciaPicoKw: leituraPicoPotencia.potencia_w / 1000,
+            potenciaPicoHora: leituraPicoPotencia.ts,
+            fpMedia, fpPico
+        };
+    });
 }
 
 function gerarLeituraAleatoria(ambienteId) {
@@ -128,12 +273,13 @@ async function gerarDadosSimulados() {
             }
             ambientesMonitorados = await respostaAmbientes.json();
         } catch (error) {
+            ambientesMonitorados = [];
+        }
+
+        // Servidor sem ambientes cadastrados (banco vazio) é tratado como indisponível
+        if (ambientesMonitorados.length === 0) {
             ativarModoLocal();
         }
-    }
-
-    if (ambientesMonitorados.length === 0) {
-        throw new Error('Nenhum ambiente cadastrado para simulação');
     }
 
     if (modoLocal) {
