@@ -58,6 +58,7 @@ async function carregarDados() {
 // Função para desenhar o gráfico
 let meuGrafico;
 let intervaloSimulacao;
+let intervaloAtualizacaoDashboard;
 let simulacaoAtiva = false;
 let ambientesMonitorados = [];
 let modoLocal = false;
@@ -65,7 +66,7 @@ let leiturasLocais = [];
 
 const ambientesDemonstracao = [
     { id: 1, nome: 'Laboratório', tipo: 'Acadêmico' },
-    { id: 2, nome: 'Biblioteca', tipo: 'Acadêmico' },
+    { id: 2, nome: 'Oficina', tipo: 'Acadêmico' },
     { id: 3, nome: 'Bloco Administrativo', tipo: 'Administrativo' }
 ];
 
@@ -110,8 +111,9 @@ function renderizarDadosLocais() {
 
 const TENSAO_NOMINAL = 127.0;
 const TENSAO_TOLERANCIA_PCT = 0.05; // faixa adequada: ±5% (ANEEL/Prodist, simplificado)
-const FP_MINIMO = 0.92; // mínimo regulatório ANEEL/Prodist para fator de potência
-const POTENCIA_ANOMALIA_FATOR = 1.4; // pico 40% acima da média = anomalia de demanda
+const FP_MINIMO = 0.85; // limite crítico para fator de potência
+const FP_MONITORAR = 0.92; // faixa de atenção
+const POTENCIA_ANOMALIA_FATOR = 1.6; // pico 60% acima da média = anomalia de demanda
 
 function formatarHora(ts) {
     return ts ? new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--';
@@ -141,16 +143,32 @@ function diagnosticarPotencia(media, pico, horaPico) {
     };
 }
 
-function diagnosticarFatorPotencia(pico) {
-    const indutivo = pico !== null && pico !== undefined && pico < FP_MINIMO;
+function diagnosticarFatorPotencia(media, pico) {
+    const mediaValida = media !== null && media !== undefined;
+    const picoValido = pico !== null && pico !== undefined;
+
+    if (!mediaValida && !picoValido) {
+        return {
+            picoTexto: '--',
+            diagnostico: 'Sem dados de fator de potência',
+            status: 'ok'
+        };
+    }
+
+    const mediaAtual = mediaValida ? media : pico;
+    const alerta = mediaAtual < FP_MINIMO;
+    const monitorar = mediaAtual >= FP_MINIMO && mediaAtual < FP_MONITORAR;
+
     return {
-        picoTexto: (pico !== null && pico !== undefined)
-            ? `${pico.toFixed(2)} ${indutivo ? '⚠️ Indutivo' : '✅ Normal'}`
-            : '--',
-        diagnostico: indutivo
+        picoTexto: mediaValida
+            ? `${mediaAtual.toFixed(2)} ${alerta ? '⚠️ Crítico' : monitorar ? '⚠️ Monitorar' : '✅ Normal'}`
+            : `${pico.toFixed(2)} ${alerta ? '⚠️ Crítico' : '✅ Normal'}`,
+        diagnostico: alerta
             ? '⚠️ Corrigir fator de potência — instalar banco de capacitores (carga indutiva)'
-            : 'Fator de potência adequado',
-        status: indutivo ? 'alerta' : 'ok'
+            : monitorar
+                ? '⚠️ Fator de potência próximo do limite — acompanhar operação'
+                : 'Fator de potência adequado',
+        status: alerta ? 'alerta' : monitorar ? 'alerta' : 'ok'
     };
 }
 
@@ -184,7 +202,7 @@ function renderizarAnaliseTecnica(lista) {
         `;
         corpoPotencia.appendChild(linhaPotencia);
 
-        const fp = diagnosticarFatorPotencia(item.fpPico);
+        const fp = diagnosticarFatorPotencia(item.fpMedia, item.fpPico);
         const linhaFp = document.createElement('tr');
         linhaFp.innerHTML = `
             <td>${item.nome}</td>
@@ -250,7 +268,9 @@ function calcularAnaliseLocal() {
 function gerarLeituraAleatoria(ambienteId) {
     const tensao = 127 + (Math.random() - 0.5) * 3;
     const potencia = 100 + Math.random() * 700;
-    const fatorPotencia = 0.8 + Math.random() * 0.15;
+    const fatorPotencia = Math.random() < 0.15
+        ? 0.85 + Math.random() * 0.06
+        : 0.94 + Math.random() * 0.05;
 
     return {
         ambiente_id: ambienteId,
@@ -297,7 +317,10 @@ async function gerarDadosSimulados() {
         const resposta = await fetch('/api/leituras', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(gerarLeituraAleatoria(ambiente.id))
+            body: JSON.stringify({
+                ...gerarLeituraAleatoria(ambiente.id),
+                ts: new Date().toISOString()
+            })
         });
 
         if (!resposta.ok) {
@@ -306,6 +329,20 @@ async function gerarDadosSimulados() {
     }));
 
     await carregarDados();
+}
+
+function iniciarAtualizacaoTempoReal() {
+    if (intervaloAtualizacaoDashboard) {
+        clearInterval(intervaloAtualizacaoDashboard);
+    }
+
+    intervaloAtualizacaoDashboard = setInterval(async () => {
+        try {
+            await carregarDados();
+        } catch (error) {
+            console.error('Erro ao atualizar painel em tempo real:', error);
+        }
+    }, 5000);
 }
 
 function configurarSimulacao() {
@@ -420,6 +457,20 @@ async function carregarGrafico(ambienteId) {
     });
 }
 
+function atualizarRelogio() {
+    const relogio = document.getElementById('relogio-atual');
+    if (!relogio) {
+        return;
+    }
+
+    const agora = new Date();
+    relogio.textContent = agora.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
 function configurarTema() {
     const botaoTema = document.getElementById('alternar-tema');
     const modoNoturnoSalvo = localStorage.getItem('modo-noturno') === 'true';
@@ -440,9 +491,16 @@ function configurarTema() {
     });
 }
 
+function iniciarRelogioReal() {
+    atualizarRelogio();
+    setInterval(atualizarRelogio, 1000);
+}
+
 // Chamar a função quando a página carregar
 document.addEventListener('DOMContentLoaded', () => {
     configurarTema();
     configurarSimulacao();
+    iniciarRelogioReal();
+    iniciarAtualizacaoTempoReal();
     carregarDados();
 });

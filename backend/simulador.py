@@ -24,9 +24,13 @@ def gerar_leitura(ambiente_id):
     w = consumo_realista(hora)
     v = random.gauss(127.0, 1.5)
     i = w / v if v > 0 else 0
-    fp = 0.85 + random.gauss(0, 0.02)
-    fp = max(0.7, min(0.95, fp))
-    
+
+    # Mantém a maior parte dos valores em faixa normal, com poucos picos críticos
+    if random.random() < 0.12:
+        fp = random.uniform(0.82, 0.88)
+    else:
+        fp = random.uniform(0.93, 0.99)
+
     return {
         'ambiente_id': ambiente_id,
         'tensao_v': round(v, 2),
