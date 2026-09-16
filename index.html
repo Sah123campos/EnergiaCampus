@@ -12,16 +12,18 @@
 <body>
     <div class="container">
         <header>
-            <div>
+            <div class="header-title">
                 <h1>⚡ Monitoramento Energético</h1>
                 <div id="relogio-atual" class="relogio-atual">--:--:--</div>
             </div>
-            <button id="alternar-simulacao" class="simulation-toggle" type="button" aria-pressed="false">
-                ▶ Iniciar simulação
-            </button>
-            <button id="alternar-tema" class="theme-toggle" type="button" aria-pressed="false">
-                <span aria-hidden="true">☾</span> Modo noturno
-            </button>
+            <div class="header-actions">
+                <button id="alternar-simulacao" class="simulation-toggle" type="button" aria-pressed="false">
+                    ▶ Iniciar simulação
+                </button>
+                <button id="alternar-tema" class="theme-toggle" type="button" aria-pressed="false">
+                    <span aria-hidden="true">☾</span> Modo noturno
+                </button>
+            </div>
         </header>
 
         <!-- Cards de resumo -->
