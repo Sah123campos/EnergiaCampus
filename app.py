@@ -230,13 +230,20 @@ def matriz_calor():
     Matriz de calor hora x dia da semana, citada no artigo como um dos
     endpoints GET consumidos pelo dashboard. Agrega a potência média (W)
     de todos os ambientes por hora (0-23) e dia da semana (0=Segunda ... 6=Domingo).
+    Se `ambiente_id` for informado, filtra apenas aquele ambiente.
     """
     dias = int(request.args.get('dias', 30))
     desde = datetime.now() - timedelta(days=dias)
+    ambiente_id = request.args.get('ambiente_id', 'todos')
 
-    leituras = db.session.query(
+    consulta = db.session.query(
         Leitura.data_hora, Leitura.potencia_w
-    ).filter(Leitura.data_hora >= desde).all()
+    ).filter(Leitura.data_hora >= desde)
+
+    if ambiente_id and ambiente_id != 'todos':
+        consulta = consulta.filter(Leitura.ambiente_id == int(ambiente_id))
+
+    leituras = consulta.all()
 
     soma = [[0.0] * 24 for _ in range(7)]
     contagem = [[0] * 24 for _ in range(7)]
@@ -258,7 +265,8 @@ def matriz_calor():
     return jsonify({
         'matriz': matriz,
         'dias_semana': ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'],
-        'unidade': 'W'
+        'unidade': 'W',
+        'ambiente_id': int(ambiente_id) if ambiente_id and ambiente_id != 'todos' else None
     })
 
 

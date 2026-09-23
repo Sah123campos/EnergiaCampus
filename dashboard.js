@@ -21,6 +21,7 @@ async function carregarDados() {
         const resAmbientes = await fetch('/api/ambientes');
         const ambientes = await resAmbientes.json();
         ambientesMonitorados = ambientes;
+        popularFiltroHeatmap();
 
         const corpoTabela = document.getElementById('corpo-tabela');
         corpoTabela.innerHTML = '';
@@ -60,6 +61,7 @@ let simulacaoAtiva = false;
 let ambientesMonitorados = [];
 let modoLocal = false;
 let leiturasLocais = [];
+let ambienteHeatmapSelecionado = 'todos';
 
 const ambientesDemonstracao = [
     { id: 1, nome: 'Laboratório', tipo: 'Acadêmico' },
@@ -100,6 +102,7 @@ function renderizarDadosLocais() {
         corpoTabela.appendChild(row);
     });
 
+    popularFiltroHeatmap();
     renderizarAnaliseTecnica(calcularAnaliseLocal());
     if (ambientesMonitorados.length > 0) {
         carregarGrafico(ambientesMonitorados[0].id);
@@ -381,14 +384,42 @@ function renderizarAnomalias(anomalias) {
 
 const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
+function popularFiltroHeatmap() {
+    const select = document.getElementById('filtro-heatmap-ambiente');
+    if (!select) return;
+
+    const ambientes = ambientesMonitorados.length ? ambientesMonitorados : ambientesDemonstracao;
+    const valorAnterior = ambienteHeatmapSelecionado;
+    select.innerHTML = '<option value="todos">Todos</option>';
+
+    ambientes.forEach(ambiente => {
+        const option = document.createElement('option');
+        option.value = String(ambiente.id);
+        option.textContent = `${ambiente.nome} (${ambiente.tipo})`;
+        select.appendChild(option);
+    });
+
+    if (ambientes.some(ambiente => String(ambiente.id) === String(valorAnterior))) {
+        ambienteHeatmapSelecionado = String(valorAnterior);
+    } else {
+        ambienteHeatmapSelecionado = 'todos';
+    }
+
+    select.value = ambienteHeatmapSelecionado;
+}
+
 async function carregarHeatmap() {
     let matriz, diasSemana;
+    const params = new URLSearchParams({ dias: '30' });
+    if (ambienteHeatmapSelecionado && ambienteHeatmapSelecionado !== 'todos') {
+        params.set('ambiente_id', ambienteHeatmapSelecionado);
+    }
 
     try {
         if (modoLocal) {
             ({ matriz, diasSemana } = calcularHeatmapLocal());
         } else {
-            const resHeatmap = await fetch('/api/relatorio/heatmap?dias=30');
+            const resHeatmap = await fetch(`/api/relatorio/heatmap?${params.toString()}`);
             if (!resHeatmap.ok) throw new Error('Resposta inválida do servidor');
             const dados = await resHeatmap.json();
             matriz = dados.matriz;
@@ -418,7 +449,11 @@ function calcularHeatmapLocal() {
     const soma = Array.from({ length: 7 }, () => Array(24).fill(0));
     const contagem = Array.from({ length: 7 }, () => Array(24).fill(0));
 
-    leiturasLocais.forEach(l => {
+    const leiturasFiltradas = ambienteHeatmapSelecionado !== 'todos'
+        ? leiturasLocais.filter(l => String(l.ambiente_id) === String(ambienteHeatmapSelecionado))
+        : leiturasLocais;
+
+    leiturasFiltradas.forEach(l => {
         const data = new Date(l.ts);
         const diaSemana = (data.getDay() + 6) % 7;
         const hora = data.getHours();
@@ -474,11 +509,29 @@ function renderizarHeatmap(matriz, diasSemana) {
 }
 
 function gerarLeituraAleatoria(ambienteId) {
+    const ambiente = ambientesMonitorados.find(ambiente => ambiente.id === ambienteId) || { tipo: 'Acadêmico', nome: `Ambiente ${ambienteId}` };
+    const hora = new Date().getHours();
+    const padrao = {
+        Acadêmico: { base: 260, pico: 520, variacao: 0.8 },
+        Administrativo: { base: 180, pico: 330, variacao: 0.55 },
+        Comercial: { base: 220, pico: 430, variacao: 0.7 },
+        Industrial: { base: 320, pico: 620, variacao: 0.95 }
+    };
+    const perfil = padrao[ambiente.tipo] || padrao['Acadêmico'];
+
+    const fatorHorario = hora >= 7 && hora <= 18
+        ? 1 + (Math.sin(((hora - 7) / 11) * Math.PI) * 0.65)
+        : (hora >= 19 || hora <= 6) ? 0.45 + Math.random() * 0.25 : 0.7 + Math.random() * 0.25;
+
+    const potencia = Math.max(
+        80,
+        (perfil.base + (Math.random() * perfil.variacao * 200)) * fatorHorario + (Math.random() - 0.5) * 100
+    );
+
     const tensao = 127 + (Math.random() - 0.5) * 3;
-    const potencia = 100 + Math.random() * 700;
-    const fatorPotencia = Math.random() < 0.15
-        ? 0.85 + Math.random() * 0.06
-        : 0.94 + Math.random() * 0.05;
+    const fatorPotencia = Math.random() < 0.1
+        ? 0.84 + Math.random() * 0.08
+        : 0.92 + Math.random() * 0.06;
 
     return {
         ambiente_id: ambienteId,
@@ -713,6 +766,16 @@ function configurarTema() {
     });
 }
 
+function configurarFiltroHeatmapUI() {
+    const select = document.getElementById('filtro-heatmap-ambiente');
+    if (!select) return;
+
+    select.addEventListener('change', (event) => {
+        ambienteHeatmapSelecionado = event.target.value;
+        carregarHeatmap();
+    });
+}
+
 function iniciarRelogioReal() {
     atualizarRelogio();
     setInterval(atualizarRelogio, 1000);
@@ -721,6 +784,7 @@ function iniciarRelogioReal() {
 document.addEventListener('DOMContentLoaded', () => {
     configurarTema();
     configurarSimulacao();
+    configurarFiltroHeatmapUI();
     iniciarRelogioReal();
     iniciarAtualizacaoTempoReal();
     carregarDados();
