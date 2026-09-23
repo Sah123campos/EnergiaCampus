@@ -48,8 +48,33 @@ async function carregarDados() {
         await carregarHeatmap();
     } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        ativarModoLocal();
-        renderizarDadosLocais();
+
+        if (simulacaoAtiva || modoLocal) {
+            ativarModoLocal();
+            renderizarDadosLocais();
+            return;
+        }
+
+        document.getElementById('consumo-mes').innerText = '0.00';
+        document.getElementById('media-potencia').innerText = '0.00';
+        document.getElementById('total-leituras').innerText = '0';
+        document.getElementById('variacao').innerText = '0%';
+
+        const corpoTabela = document.getElementById('corpo-tabela');
+        if (corpoTabela) {
+            corpoTabela.innerHTML = '';
+        }
+
+        limparTelaSemDados();
+
+        if (ambientesMonitorados.length === 0) {
+            ambientesMonitorados = [];
+        }
+
+        popularFiltroHeatmap();
+        renderizarAnaliseTecnica([]);
+        await carregarAnomalias();
+        await carregarHeatmap();
     }
 }
 
@@ -64,14 +89,72 @@ let leiturasLocais = [];
 let ambienteHeatmapSelecionado = 'todos';
 
 const ambientesDemonstracao = [
-    { id: 1, nome: 'Laboratório', tipo: 'Acadêmico' },
-    { id: 2, nome: 'Oficina', tipo: 'Acadêmico' },
+    { id: 1, nome: 'Laboratório', tipo: 'Laboratório' },
+    { id: 2, nome: 'Oficina', tipo: 'Oficina' },
     { id: 3, nome: 'Bloco Administrativo', tipo: 'Administrativo' }
 ];
+
+function obterPerfilAmbiente(ambiente) {
+    const nome = (ambiente?.nome || '').toLowerCase();
+    const tipo = (ambiente?.tipo || '').toLowerCase();
+
+    if (tipo.includes('laborat') || nome.includes('laborat')) {
+        return { base: 210, variacao: 90, pico: 430, fator: 0.9 };
+    }
+
+    if (tipo.includes('oficina') || nome.includes('oficina')) {
+        return { base: 170, variacao: 75, pico: 360, fator: 0.82 };
+    }
+
+    const basePadrao = {
+        Acadêmico: { base: 120, variacao: 70, pico: 340, fator: 0.85 },
+        Administrativo: { base: 95, variacao: 48, pico: 230, fator: 0.88 },
+        Comercial: { base: 140, variacao: 60, pico: 300, fator: 0.86 },
+        Industrial: { base: 170, variacao: 88, pico: 420, fator: 0.8 }
+    };
+
+    return basePadrao[tipo.charAt(0).toUpperCase() + tipo.slice(1)] || basePadrao.Academico;
+}
 
 function ativarModoLocal() {
     modoLocal = true;
     ambientesMonitorados = ambientesDemonstracao.map(ambiente => ({ ...ambiente }));
+}
+
+function usarModoLocalQuandoServidorIndisponivel() {
+    const emArquivoLocal = window.location.protocol === 'file:';
+    if (emArquivoLocal) {
+        ativarModoLocal();
+
+        if (ambientesMonitorados.length > 0 && leiturasLocais.length === 0) {
+            leiturasLocais = ambientesMonitorados.map(ambiente => ({
+                ...gerarLeituraAleatoria(ambiente.id),
+                ts: new Date().toISOString()
+            }));
+        }
+
+        renderizarDadosLocais();
+        return true;
+    }
+
+    return false;
+}
+
+function limparTelaSemDados() {
+    const container = document.getElementById('heatmap-container');
+    if (container) {
+        container.innerHTML = '<div class="heatmap-vazio">Sem dados do sensor. Ative a simulação ou conecte a API do sistema.</div>';
+    }
+
+    if (meuGrafico) {
+        meuGrafico.destroy();
+        meuGrafico = null;
+    }
+
+    if (graficoAnomalias) {
+        graficoAnomalias.destroy();
+        graficoAnomalias = null;
+    }
 }
 
 function renderizarDadosLocais() {
@@ -313,6 +396,14 @@ function calcularAnomaliasLocais() {
 
 function renderizarAnomalias(anomalias) {
     const corpoAnomalias = document.getElementById('corpo-anomalias');
+    const ajuda = document.getElementById('anomalias-help');
+
+    if (ajuda) {
+        ajuda.textContent = anomalias.length > 0
+            ? `Mostrando ${anomalias.length} ocorrência(s) fora do padrão. Só aparecem pontos com |z| > 2, que representam exceções reais de consumo.`
+            : 'Nenhuma anomalia foi detectada neste período. Quando não há exceções, o gráfico fica vazio por design.';
+    }
+
     if (corpoAnomalias) {
         corpoAnomalias.innerHTML = '';
         if (anomalias.length === 0) {
@@ -335,7 +426,12 @@ function renderizarAnomalias(anomalias) {
     if (!canvas) return;
 
     const tema = obterTemaGrafico();
-    const pontos = anomalias.map(a => ({ x: new Date(a.ts).getTime(), y: a.potencia_w }));
+    const pontos = anomalias.map(a => ({
+        x: new Date(a.ts).getTime(),
+        y: a.potencia_w,
+        ambiente: a.ambiente_nome,
+        zScore: a.z_score
+    }));
 
     if (graficoAnomalias) {
         graficoAnomalias.destroy();
@@ -345,11 +441,13 @@ function renderizarAnomalias(anomalias) {
         type: 'scatter',
         data: {
             datasets: [{
-                label: 'Anomalias (|z| > 2)',
+                label: 'Pontos fora do padrão (|z| > 2)',
                 data: pontos,
                 backgroundColor: '#e74c3c',
-                pointRadius: 5,
-                pointHoverRadius: 7
+                borderColor: '#ffffff',
+                borderWidth: 1,
+                pointRadius: 6,
+                pointHoverRadius: 8
             }]
         },
         options: {
@@ -374,7 +472,8 @@ function renderizarAnomalias(anomalias) {
                 legend: { labels: { color: tema.texto } },
                 tooltip: {
                     callbacks: {
-                        title: (itens) => new Date(itens[0].parsed.x).toLocaleString('pt-BR')
+                        title: (itens) => new Date(itens[0].parsed.x).toLocaleString('pt-BR'),
+                        label: (context) => `${context.raw.ambiente} • Potência: ${context.raw.y.toFixed(2)} W • z = ${context.raw.zScore}`
                     }
                 }
             }
@@ -383,6 +482,120 @@ function renderizarAnomalias(anomalias) {
 }
 
 const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+let heatmapMesAtual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let heatmapSimuladoBase = {};
+
+function atualizarLabelHeatmapMes() {
+    const label = document.getElementById('heatmap-mes-label');
+    if (!label) return;
+    label.textContent = heatmapMesAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
+
+function gerarValorDiaCalendario(dia, mesData, ambienteId) {
+    const ambiente = ambientesMonitorados.find(item => item.id === ambienteId) || { tipo: 'Acadêmico' };
+    const perfil = {
+        Acadêmico: { base: 120, variacao: 70 },
+        Administrativo: { base: 95, variacao: 48 },
+        Comercial: { base: 140, variacao: 60 },
+        Industrial: { base: 170, variacao: 88 },
+        Laboratório: { base: 205, variacao: 90 },
+        Oficina: { base: 165, variacao: 76 }
+    };
+
+    const padrao = perfil[ambiente.tipo] || obterPerfilAmbiente(ambiente);
+    const diaSemana = new Date(mesData.getFullYear(), mesData.getMonth(), dia).getDay();
+    const fatorSemana = [0.72, 1.0, 1.12, 1.18, 1.08, 0.88, 0.78][diaSemana];
+    const fatorMes = 1 + Math.sin((dia / Math.max(1, new Date(mesData.getFullYear(), mesData.getMonth() + 1, 0).getDate())) * Math.PI * 2 + mesData.getMonth()) * 0.65;
+    const offsetAmbiente = ((ambienteId * 17) % 23) + (ambienteId * 2.5);
+    const valor = Math.round(
+        (padrao.base + (padrao.variacao * fatorSemana * fatorMes)) +
+        offsetAmbiente +
+        ((dia + ambienteId) % 6) * 12
+    );
+
+    return Math.max(0, valor);
+}
+
+function gerarHeatmapMensal() {
+    const ano = heatmapMesAtual.getFullYear();
+    const mes = heatmapMesAtual.getMonth();
+    const ultimoDiaMes = new Date(ano, mes + 1, 0).getDate();
+    const hoje = new Date();
+    const hojeMes = hoje.getMonth();
+    const hojeAno = hoje.getFullYear();
+
+    if (!modoLocal && !simulacaoAtiva) {
+        return Array.from({ length: ultimoDiaMes }, () => null);
+    }
+
+    const ambienteKey = String(ambienteHeatmapSelecionado || 'todos');
+    const chaveBase = `${ano}-${mes}-${ambienteKey}`;
+
+    if (!heatmapSimuladoBase[chaveBase]) {
+        const ambientesDisponiveis = ambientesMonitorados.length ? ambientesMonitorados : ambientesDemonstracao;
+        const idsAmbientes = ambienteHeatmapSelecionado !== 'todos'
+            ? [Number(ambienteHeatmapSelecionado)]
+            : ambientesDisponiveis.map(a => a.id);
+
+        if (idsAmbientes.length === 0) {
+            heatmapSimuladoBase[chaveBase] = Array.from({ length: ultimoDiaMes }, () => null);
+        } else {
+            const valoresBase = idsAmbientes.map(id => Array.from(
+                { length: ultimoDiaMes },
+                (_, indice) => gerarValorDiaCalendario(indice + 1, heatmapMesAtual, id)
+            ));
+
+            const base = Array.from({ length: ultimoDiaMes }, () => null);
+            const diaAtual = hoje.getDate();
+
+            for (let dia = 1; dia <= ultimoDiaMes; dia++) {
+                const valoresDia = valoresBase.map(series => series[dia - 1]);
+                const mediaDia = valoresDia.reduce((total, valor) => total + valor, 0) / Math.max(1, valoresDia.length);
+                base[dia - 1] = Math.round(mediaDia);
+            }
+
+            heatmapSimuladoBase[chaveBase] = base;
+        }
+    }
+
+    const base = heatmapSimuladoBase[chaveBase] || Array.from({ length: ultimoDiaMes }, () => null);
+    const resultado = Array.from({ length: ultimoDiaMes }, () => null);
+    const diaAtual = hoje.getDate();
+
+    for (let dia = 1; dia <= ultimoDiaMes; dia++) {
+        const valor = base[dia - 1];
+        if (valor === null) {
+            continue;
+        }
+
+        resultado[dia - 1] = dia === diaAtual
+            ? Math.max(0, Math.round(valor + Math.sin(Date.now() / 60000) * 18))
+            : valor;
+    }
+
+    return resultado;
+}
+
+function configurarNavegacaoHeatmap() {
+    const anterior = document.getElementById('heatmap-mes-anterior');
+    const proximo = document.getElementById('heatmap-mes-proximo');
+
+    if (anterior) {
+        anterior.addEventListener('click', () => {
+            heatmapMesAtual = new Date(heatmapMesAtual.getFullYear(), heatmapMesAtual.getMonth() - 1, 1);
+            atualizarLabelHeatmapMes();
+            carregarHeatmap();
+        });
+    }
+
+    if (proximo) {
+        proximo.addEventListener('click', () => {
+            heatmapMesAtual = new Date(heatmapMesAtual.getFullYear(), heatmapMesAtual.getMonth() + 1, 1);
+            atualizarLabelHeatmapMes();
+            carregarHeatmap();
+        });
+    }
+}
 
 function popularFiltroHeatmap() {
     const select = document.getElementById('filtro-heatmap-ambiente');
@@ -409,40 +622,72 @@ function popularFiltroHeatmap() {
 }
 
 async function carregarHeatmap() {
-    let matriz, diasSemana;
-    const params = new URLSearchParams({ dias: '30' });
-    if (ambienteHeatmapSelecionado && ambienteHeatmapSelecionado !== 'todos') {
-        params.set('ambiente_id', ambienteHeatmapSelecionado);
-    }
+    const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-    try {
-        if (modoLocal) {
-            ({ matriz, diasSemana } = calcularHeatmapLocal());
-        } else {
-            const resHeatmap = await fetch(`/api/relatorio/heatmap?${params.toString()}`);
-            if (!resHeatmap.ok) throw new Error('Resposta inválida do servidor');
-            const dados = await resHeatmap.json();
-            matriz = dados.matriz;
-            diasSemana = dados.dias_semana;
-        }
-    } catch (err) {
-        console.warn('Falha ao carregar heatmap do servidor — usando fallback local/exemplo:', err);
-
-        if (leiturasLocais && leiturasLocais.length > 0) {
-            ({ matriz, diasSemana } = calcularHeatmapLocal());
-        } else {
-            matriz = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => null));
-            for (let d = 0; d < 7; d++) {
-                for (let h = 7; h <= 20; h++) {
-                    const base = 80 + Math.round((Math.sin((h - 6) / 14 * Math.PI) * 220) + Math.random() * 40);
-                    matriz[d][h] = base + d * 8;
-                }
+    if (!modoLocal && !simulacaoAtiva) {
+        try {
+            const params = new URLSearchParams({
+                ambiente_id: String(ambienteHeatmapSelecionado || 'todos')
+            });
+            const resposta = await fetch(`/api/relatorio/heatmap?${params.toString()}`);
+            if (!resposta.ok) {
+                throw new Error('Heatmap do backend indisponível');
             }
-            diasSemana = DIAS_SEMANA;
+
+            const dados = await resposta.json();
+            const matriz = Array.isArray(dados?.matriz) ? dados.matriz : Array.from({ length: new Date(heatmapMesAtual.getFullYear(), heatmapMesAtual.getMonth() + 1, 0).getDate() }, () => null);
+            atualizarLabelHeatmapMes();
+            renderizarHeatmap(matriz, Array.isArray(dados?.dias_semana) ? dados.dias_semana : diasSemana);
+            return;
+        } catch (error) {
+            console.warn('Sem dados do sensor para o heatmap:', error);
         }
     }
 
+    const matriz = gerarHeatmapMensal();
+    atualizarLabelHeatmapMes();
     renderizarHeatmap(matriz, diasSemana);
+}
+
+function gerarHeatmapSimuladoFixo() {
+    const diaAtual = (new Date().getDay() + 6) % 7;
+    const matriz = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => null));
+
+    const ambienteId = ambienteHeatmapSelecionado !== 'todos'
+        ? Number(ambienteHeatmapSelecionado)
+        : (ambientesMonitorados[0]?.id ?? 1);
+
+    const ambiente = ambientesMonitorados.find(item => item.id === ambienteId) || { tipo: 'Acadêmico' };
+    const perfil = {
+        Acadêmico: { base: 120, variacao: 70 },
+        Administrativo: { base: 90, variacao: 55 },
+        Comercial: { base: 110, variacao: 62 },
+        Industrial: { base: 150, variacao: 88 },
+        Laboratório: { base: 210, variacao: 92 },
+        Oficina: { base: 165, variacao: 78 }
+    };
+    const padrao = perfil[ambiente.tipo] || obterPerfilAmbiente(ambiente);
+
+    for (let dia = 0; dia <= diaAtual; dia++) {
+        for (let hora = 0; hora < 24; hora++) {
+            const fatorHorario = hora >= 7 && hora <= 18
+                ? 1 + Math.sin(((hora - 7) / 11) * Math.PI) * 0.9
+                : hora >= 19 || hora <= 5
+                    ? 0.3 + (hora / 24) * 0.35
+                    : 0.55 + (hora / 24) * 0.25;
+
+            const valor = Math.round(
+                padrao.base +
+                padrao.variacao * fatorHorario +
+                Math.sin((dia + 1) * 1.7 + hora * 0.8) * 18 +
+                Math.cos((ambienteId + 1) * 1.3 + dia * 0.9) * 12
+            );
+
+            matriz[dia][hora] = Math.max(0, valor);
+        }
+    }
+
+    return { matriz, diasSemana: DIAS_SEMANA };
 }
 
 function calcularHeatmapLocal() {
@@ -452,6 +697,10 @@ function calcularHeatmapLocal() {
     const leiturasFiltradas = ambienteHeatmapSelecionado !== 'todos'
         ? leiturasLocais.filter(l => String(l.ambiente_id) === String(ambienteHeatmapSelecionado))
         : leiturasLocais;
+
+    if (leiturasFiltradas.length === 0) {
+        return gerarHeatmapSimuladoFixo();
+    }
 
     leiturasFiltradas.forEach(l => {
         const data = new Date(l.ts);
@@ -470,39 +719,119 @@ function calcularHeatmapLocal() {
 
 function corParaValor(valor, minVal, maxVal) {
     if (valor === null || valor === undefined) return null;
-    if (maxVal === minVal) return 'hsl(200, 70%, 55%)';
-    const t = (valor - minVal) / (maxVal - minVal);
-    const matiz = 210 - t * 210;
-    return `hsl(${matiz}, 78%, ${58 - t * 16}%)`;
+    if (maxVal === minVal) return '#eaf7f1';
+
+    const t = Math.max(0, Math.min(1, (valor - minVal) / (maxVal - minVal)));
+
+    const cores = [
+        { stop: 0.0, cor: [239, 248, 244] },
+        { stop: 0.28, cor: [168, 224, 193] },
+        { stop: 0.55, cor: [86, 191, 160] },
+        { stop: 0.8, cor: [246, 194, 84] },
+        { stop: 1.0, cor: [28, 92, 117] }
+    ];
+
+    for (let i = 0; i < cores.length - 1; i++) {
+        const atual = cores[i];
+        const proximo = cores[i + 1];
+
+        if (t >= atual.stop && t <= proximo.stop) {
+            const faixa = (t - atual.stop) / (proximo.stop - atual.stop || 1);
+            const r = Math.round(atual.cor[0] + (proximo.cor[0] - atual.cor[0]) * faixa);
+            const g = Math.round(atual.cor[1] + (proximo.cor[1] - atual.cor[1]) * faixa);
+            const b = Math.round(atual.cor[2] + (proximo.cor[2] - atual.cor[2]) * faixa);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+    }
+
+    const ultima = cores[cores.length - 1].cor;
+    return `rgb(${ultima[0]}, ${ultima[1]}, ${ultima[2]})`;
+}
+
+function deveExibirDiaCalendario(ano, mes, dia) {
+    const hoje = new Date();
+    const dataCalculo = new Date(ano, mes, dia);
+    const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+
+    if (dataCalculo > hojeSemHora) {
+        return false;
+    }
+
+    return true;
 }
 
 function renderizarHeatmap(matriz, diasSemana) {
     const container = document.getElementById('heatmap-container');
     if (!container) return;
 
-    const valores = matriz.flat().filter(v => v !== null && v !== undefined);
-    const minVal = valores.length ? Math.min(...valores) : 0;
-    const maxVal = valores.length ? Math.max(...valores) : 0;
+    const ano = heatmapMesAtual.getFullYear();
+    const mes = heatmapMesAtual.getMonth();
+    const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+    const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+    const diasCabecalho = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const hoje = new Date();
+    const hojeMes = hoje.getMonth();
+    const hojeAno = hoje.getFullYear();
+    const hojeDia = hoje.getDate();
+    const possuiDados = Array.isArray(matriz) && matriz.some(valor => Number(valor) > 0);
 
-    let html = '<table class="heatmap-tabela"><thead><tr><th>Hora</th>';
-    for (let hora = 0; hora < 24; hora++) {
-        html += `<th>${hora}h</th>`;
-    }
+    const celulas = Array.from({ length: 42 }, (_, index) => {
+        const dia = index - primeiroDiaSemana + 1;
+        if (dia <= 0 || dia > ultimoDia) {
+            return { dia: null, valor: null, futuro: false, hoje: false };
+        }
+
+        const futuro = (ano > hojeAno || (ano === hojeAno && mes > hojeMes)) && dia > 0;
+        const eHoje = ano === hojeAno && mes === hojeMes && dia === hojeDia;
+        const deveMostrar = deveExibirDiaCalendario(ano, mes, dia);
+
+        return {
+            dia,
+            valor: Array.isArray(matriz) ? (matriz[dia - 1] ?? 0) : 0,
+            futuro: !deveMostrar || futuro,
+            hoje: eHoje
+        };
+    });
+
+    let html = '<table class="heatmap-tabela"><thead><tr>';
+    diasCabecalho.forEach(dia => html += `<th>${dia}</th>`);
     html += '</tr></thead><tbody>';
 
-    matriz.forEach((linha, i) => {
-        html += `<tr><th>${diasSemana[i]}</th>`;
-        linha.forEach(valor => {
-            const cor = corParaValor(valor, minVal, maxVal);
-            if (cor === null) {
+    for (let linha = 0; linha < 6; linha++) {
+        html += '<tr>';
+        for (let coluna = 0; coluna < 7; coluna++) {
+            const idx = linha * 7 + coluna;
+            const item = celulas[idx];
+            if (!item || item.dia === null) {
                 html += '<td class="heatmap-celula vazia">—</td>';
-            } else {
-                const texto = Math.round(valor);
-                html += `<td class="heatmap-celula" style="background-color:${cor}" title="${texto} W">${texto}</td>`;
+                continue;
             }
-        });
+
+            if (item.futuro) {
+                html += `<td class="heatmap-celula futuro" title="Dia futuro ainda não disponível">${item.dia}<br><small>—</small></td>`;
+                continue;
+            }
+
+            let valor = Number(item.valor ?? 0);
+            const deveriaMostrarAtualizacao = item.hoje && (simulacaoAtiva || modoLocal);
+            const semDados = !possuiDados || valor <= 0;
+
+            if (deveriaMostrarAtualizacao) {
+                valor = Math.max(0, Math.round(valor + Math.sin(Date.now() / 60000) * 18));
+            }
+
+            const cor = semDados ? '#dfe8ee' : corParaValor(valor, 0, 250);
+            const exibir = semDados ? '—' : (deveriaMostrarAtualizacao ? '↻' : valor);
+            const titulo = semDados
+                ? `Sem dados do sensor para o dia ${item.dia}`
+                : (deveriaMostrarAtualizacao
+                    ? `Atualizando em tempo real — ${valor} W no dia ${item.dia}`
+                    : `${valor} W no dia ${item.dia}`);
+
+            html += `<td class="heatmap-celula ${deveriaMostrarAtualizacao ? 'hoje' : ''}" style="background-color:${cor}" title="${titulo}">${item.dia}<br><small>${exibir}</small></td>`;
+        }
         html += '</tr>';
-    });
+    }
 
     html += '</tbody></table>';
     container.innerHTML = html;
@@ -515,9 +844,11 @@ function gerarLeituraAleatoria(ambienteId) {
         Acadêmico: { base: 260, pico: 520, variacao: 0.8 },
         Administrativo: { base: 180, pico: 330, variacao: 0.55 },
         Comercial: { base: 220, pico: 430, variacao: 0.7 },
-        Industrial: { base: 320, pico: 620, variacao: 0.95 }
+        Industrial: { base: 320, pico: 620, variacao: 0.95 },
+        Laboratório: { base: 300, pico: 610, variacao: 0.96 },
+        Oficina: { base: 240, pico: 470, variacao: 0.82 }
     };
-    const perfil = padrao[ambiente.tipo] || padrao['Acadêmico'];
+    const perfil = padrao[ambiente.tipo] || obterPerfilAmbiente(ambiente);
 
     const fatorHorario = hora >= 7 && hora <= 18
         ? 1 + (Math.sin(((hora - 7) / 11) * Math.PI) * 0.65)
@@ -533,6 +864,8 @@ function gerarLeituraAleatoria(ambienteId) {
         ? 0.84 + Math.random() * 0.08
         : 0.92 + Math.random() * 0.06;
 
+    const consumoKwh = (potencia * 0.6) / 1000;
+
     return {
         ambiente_id: ambienteId,
         tensao_v: Number(tensao.toFixed(2)),
@@ -540,12 +873,16 @@ function gerarLeituraAleatoria(ambienteId) {
         potencia_w: Number(potencia.toFixed(2)),
         potencia_va: Number((potencia / fatorPotencia).toFixed(2)),
         fator_pot: Number(fatorPotencia.toFixed(3)),
-        consumo_kwh: Number((potencia / 1000 * 10 / 3600).toFixed(6)),
+        consumo_kwh: Number(consumoKwh.toFixed(4)),
         sensor: 'simulador-web'
     };
 }
 
 async function gerarDadosSimulados() {
+    if (window.location.protocol === 'file:') {
+        ativarModoLocal();
+    }
+
     if (ambientesMonitorados.length === 0) {
         try {
             const respostaAmbientes = await fetch('/api/ambientes');
@@ -573,30 +910,58 @@ async function gerarDadosSimulados() {
         return;
     }
 
-    await Promise.all(ambientesMonitorados.map(async (ambiente) => {
-        const resposta = await fetch('/api/leituras', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ...gerarLeituraAleatoria(ambiente.id),
-                ts: new Date().toISOString()
-            })
-        });
+    try {
+        await Promise.all(ambientesMonitorados.map(async (ambiente) => {
+            const resposta = await fetch('/api/leituras', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...gerarLeituraAleatoria(ambiente.id),
+                    ts: new Date().toISOString()
+                })
+            });
 
-        if (!resposta.ok) {
-            throw new Error(`Falha ao simular ambiente ${ambiente.id}`);
+            if (!resposta.ok) {
+                if (window.location.protocol === 'file:' || resposta.status === 403) {
+                    usarModoLocalQuandoServidorIndisponivel();
+                    return;
+                }
+                throw new Error(`Falha ao simular ambiente ${ambiente.id}`);
+            }
+        }));
+
+        if (modoLocal) {
+            return;
         }
-    }));
 
-    await carregarDados();
+        await carregarDados();
+    } catch (error) {
+        console.error('Erro na simulação:', error);
+        if (window.location.protocol === 'file:' || error?.message?.includes('Falha ao simular')) {
+            usarModoLocalQuandoServidorIndisponivel();
+            return;
+        }
+        throw error;
+    }
 }
 
 function iniciarAtualizacaoTempoReal() {
     if (intervaloAtualizacaoDashboard) {
         clearInterval(intervaloAtualizacaoDashboard);
+        intervaloAtualizacaoDashboard = undefined;
+    }
+
+    if (!simulacaoAtiva && !modoLocal) {
+        return;
     }
 
     intervaloAtualizacaoDashboard = setInterval(async () => {
+        if (!simulacaoAtiva && !modoLocal) {
+            clearInterval(intervaloAtualizacaoDashboard);
+            intervaloAtualizacaoDashboard = undefined;
+            return;
+        }
+
         try {
             await carregarDados();
         } catch (error) {
@@ -620,16 +985,38 @@ function configurarSimulacao() {
     botaoSimulacao.addEventListener('click', async () => {
         if (simulacaoAtiva) {
             simulacaoAtiva = false;
+            modoLocal = false;
+            leiturasLocais = [];
             clearInterval(intervaloSimulacao);
             intervaloSimulacao = undefined;
+            if (intervaloAtualizacaoDashboard) {
+                clearInterval(intervaloAtualizacaoDashboard);
+                intervaloAtualizacaoDashboard = undefined;
+            }
+            limparTelaSemDados();
             atualizarBotao(false);
+            try {
+                await carregarDados();
+            } catch (error) {
+                console.error('Erro ao recarregar dados reais ao desligar simulação:', error);
+            }
             return;
         }
 
+        clearInterval(intervaloSimulacao);
+        intervaloSimulacao = undefined;
+        if (window.location.protocol === 'file:') {
+            ativarModoLocal();
+        } else {
+            modoLocal = false;
+        }
+        leiturasLocais = [];
         simulacaoAtiva = true;
         atualizarBotao(true);
+
         try {
             await gerarDadosSimulados();
+            iniciarAtualizacaoTempoReal();
             if (simulacaoAtiva) {
                 intervaloSimulacao = setInterval(() => {
                     gerarDadosSimulados().catch((error) => {
@@ -639,7 +1026,17 @@ function configurarSimulacao() {
             }
         } catch (error) {
             simulacaoAtiva = false;
+            modoLocal = false;
+            leiturasLocais = [];
+            clearInterval(intervaloSimulacao);
+            intervaloSimulacao = undefined;
             atualizarBotao(false);
+
+            if (window.location.protocol === 'file:') {
+                usarModoLocalQuandoServidorIndisponivel();
+                return;
+            }
+
             console.error('Erro ao iniciar simulação:', error);
             alert('Não foi possível iniciar a simulação. Verifique se o servidor está rodando.');
         }
@@ -785,7 +1182,8 @@ document.addEventListener('DOMContentLoaded', () => {
     configurarTema();
     configurarSimulacao();
     configurarFiltroHeatmapUI();
+    configurarNavegacaoHeatmap();
+    atualizarLabelHeatmapMes();
     iniciarRelogioReal();
-    iniciarAtualizacaoTempoReal();
     carregarDados();
 });

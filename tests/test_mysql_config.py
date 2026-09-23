@@ -12,13 +12,13 @@ class TestMysqlConfig(unittest.TestCase):
         self.assertIn('mysql+pymysql://', config.Config.SQLALCHEMY_DATABASE_URI)
         self.assertIn('energiacampus', config.Config.SQLALCHEMY_DATABASE_URI)
 
-    def test_database_url_defaults_to_mysql_parameters(self):
+    def test_database_url_defaults_to_sqlite_for_local_development(self):
         os.environ.pop('DATABASE_URL', None)
         import config
         importlib.reload(config)
 
-        self.assertIn('mysql+pymysql://', config.Config.SQLALCHEMY_DATABASE_URI)
-        self.assertIn('energiacampus', config.Config.SQLALCHEMY_DATABASE_URI)
+        self.assertIn('sqlite:///', config.Config.SQLALCHEMY_DATABASE_URI)
+        self.assertIn('energiacampus.db', config.Config.SQLALCHEMY_DATABASE_URI)
 
 
 if __name__ == '__main__':

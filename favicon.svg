@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="EnergiaCampus favicon">
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f3d4e"/>
+      <stop offset="100%" stop-color="#1fae88"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" x2="100%" y1="0%" y2="0%">
+      <stop offset="0%" stop-color="#f7f9fb"/>
+      <stop offset="100%" stop-color="#dff7ea"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)"/>
+  <path d="M33 11 L22 33 H31 L27 53 L44 29 H35 L41 11 Z" fill="url(#bolt)"/>
+  <circle cx="46" cy="18" r="7" fill="#f5c56d" opacity="0.95"/>
+  <path d="M46 10 L48.2 16.3 L54.5 18.5 L48.2 20.7 L46 27 L43.8 20.7 L37.5 18.5 L43.8 16.3 Z" fill="#fff9d8" opacity="0.9"/>
+</svg>

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EnergiaCampus - Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -110,7 +111,10 @@
         </section>
 
         <section class="grafico">
-            <h2>Dispersão de Anomalias (Z-Score &gt; 2)</h2>
+            <h2>Dispersão de Anomalias (pontos fora do padrão)</h2>
+            <p id="anomalias-help" class="chart-help">
+                Apenas os eventos que saem do comportamento normal aparecem como pontos. Se houver poucos pontos, isso é normal: são exceções reais, não o comportamento completo do sistema.
+            </p>
             <canvas id="graficoAnomalias"></canvas>
         </section>
 
@@ -130,12 +134,20 @@
         </section>
 
         <section class="tabela heatmap-section">
-            <h2>Mapa de Calor — Potência Média (W) por Hora e Dia da Semana</h2>
+            <h2>Calendário de Consumo — visão mensal</h2>
             <div class="heatmap-toolbar">
+                <button id="heatmap-mes-anterior" type="button" class="heatmap-nav-btn" aria-label="Mês anterior">◀</button>
+                <span id="heatmap-mes-label" class="heatmap-mes-label">Mês atual</span>
+                <button id="heatmap-mes-proximo" type="button" class="heatmap-nav-btn" aria-label="Próximo mês">▶</button>
                 <label for="filtro-heatmap-ambiente">Ambiente:</label>
                 <select id="filtro-heatmap-ambiente" aria-label="Filtrar mapa de calor por ambiente">
                     <option value="todos">Todos</option>
                 </select>
+            </div>
+            <div class="heatmap-legend" aria-label="Legenda do mapa de consumo">
+                <span>Baixo</span>
+                <span class="swatch" style="background: linear-gradient(90deg, #edf8f4, #a8e0c1, #56bfa0, #f6c254, #1c5c75);"></span>
+                <span>Alto</span>
             </div>
             <div id="heatmap-container" class="heatmap-container"></div>
         </section>
@@ -143,4 +155,4 @@
 
     <script src="dashboard.js"></script>
 </body>
-</html>
+</html
