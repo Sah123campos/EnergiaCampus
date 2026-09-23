@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EnergiaCampus - Dashboard</title>
-    <!-- Caminho atualizado: style.css está na raiz -->
     <link rel="stylesheet" href="style.css">
-    <!-- Importando Chart.js para os gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -26,7 +24,6 @@
             </div>
         </header>
 
-        <!-- Cards de resumo -->
         <section class="cards">
             <div class="card">
                 <h3>Consumo do Mês (kWh)</h3>
@@ -46,7 +43,6 @@
             </div>
         </section>
 
-        <!-- Tabela de Ambientes -->
         <section class="tabela">
             <h2>Consumo por Ambiente</h2>
             <table>
@@ -59,19 +55,15 @@
                         <th>Última Potência (W)</th>
                     </tr>
                 </thead>
-                <tbody id="corpo-tabela">
-                    <!-- Dados serão inseridos aqui via JS -->
-                </tbody>
+                <tbody id="corpo-tabela"></tbody>
             </table>
         </section>
 
-        <!-- Gráfico -->
         <section class="grafico">
             <h2>Consumo nas Últimas 24 Horas</h2>
             <canvas id="graficoConsumo"></canvas>
         </section>
 
-        <!-- Análise Técnica -->
         <section class="tabela">
             <h2>Tensão de Fase (V)</h2>
             <table>
@@ -83,9 +75,7 @@
                         <th>Diagnóstico do Sistema</th>
                     </tr>
                 </thead>
-                <tbody id="corpo-tensao">
-                    <!-- Dados serão inseridos aqui via JS -->
-                </tbody>
+                <tbody id="corpo-tensao"></tbody>
             </table>
         </section>
 
@@ -100,9 +90,7 @@
                         <th>Diagnóstico do Sistema</th>
                     </tr>
                 </thead>
-                <tbody id="corpo-potencia">
-                    <!-- Dados serão inseridos aqui via JS -->
-                </tbody>
+                <tbody id="corpo-potencia"></tbody>
             </table>
         </section>
 
@@ -117,14 +105,36 @@
                         <th>Diagnóstico do Sistema</th>
                     </tr>
                 </thead>
-                <tbody id="corpo-fp">
-                    <!-- Dados serão inseridos aqui via JS -->
-                </tbody>
+                <tbody id="corpo-fp"></tbody>
             </table>
+        </section>
+
+        <section class="grafico">
+            <h2>Dispersão de Anomalias (Z-Score &gt; 2)</h2>
+            <canvas id="graficoAnomalias"></canvas>
+        </section>
+
+        <section class="tabela">
+            <h2>Anomalias Detectadas (últimos 7 dias)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ambiente</th>
+                        <th>Data/Hora</th>
+                        <th>Potência (W)</th>
+                        <th>Z-Score</th>
+                    </tr>
+                </thead>
+                <tbody id="corpo-anomalias"></tbody>
+            </table>
+        </section>
+
+        <section class="tabela heatmap-section">
+            <h2>Mapa de Calor — Potência Média (W) por Hora e Dia da Semana</h2>
+            <div id="heatmap-container" class="heatmap-container"></div>
         </section>
     </div>
 
-    <!-- Caminho atualizado: dashboard.js está na raiz -->
     <script src="dashboard.js"></script>
 </body>
 </html>

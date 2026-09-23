@@ -190,6 +190,67 @@ canvas {
     font-weight: 600;
 }
 
+<<<<<<< HEAD
+=======
+.heatmap-container {
+    overflow-x: auto;
+}
+
+.heatmap-tabela {
+    border-collapse: collapse;
+    min-width: 900px;
+}
+
+.heatmap-tabela th,
+.heatmap-tabela td {
+    padding: 6px 4px;
+    text-align: center;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+}
+
+.heatmap-tabela th {
+    background-color: var(--table-header);
+    color: var(--heading);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+}
+
+.heatmap-tabela tbody th {
+    text-align: left;
+    padding-left: 10px;
+}
+
+.heatmap-celula {
+    color: #1c1c1c;
+    font-weight: 600;
+    min-width: 34px;
+}
+
+.heatmap-celula.vazia {
+    background-color: transparent !important;
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.heatmap-legend .swatch {
+    width: 28px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.06);
+}
+
+>>>>>>> 2fc682e (Initial commit)
 @media (max-width: 700px) {
     body {
         padding: 14px;

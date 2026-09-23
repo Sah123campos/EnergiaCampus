@@ -48,6 +48,13 @@ async function carregarDados() {
         // 4. Buscar análise técnica (tensão, potência ativa, fator de potência)
         await carregarAnaliseTecnica();
 
+<<<<<<< HEAD
+=======
+        // 5. Buscar anomalias (z-score) e matriz de calor hora x dia da semana
+        await carregarAnomalias();
+        await carregarHeatmap();
+
+>>>>>>> 2fc682e (Initial commit)
     } catch (error) {
         console.error("Erro ao carregar dados:", error);
         ativarModoLocal();
@@ -105,6 +112,11 @@ function renderizarDadosLocais() {
 
     renderizarAnaliseTecnica(calcularAnaliseLocal());
     carregarGrafico(ambientesMonitorados[0].id);
+<<<<<<< HEAD
+=======
+    carregarAnomalias();
+    carregarHeatmap();
+>>>>>>> 2fc682e (Initial commit)
 }
 
 // ----------------- ANÁLISE TÉCNICA (Tensão, Potência Ativa, Fator de Potência) -----------------
@@ -265,6 +277,225 @@ function calcularAnaliseLocal() {
     });
 }
 
+<<<<<<< HEAD
+=======
+// ----------------- DETECÇÃO DE ANOMALIAS (Z-Score) -----------------
+
+let graficoAnomalias;
+const Z_SCORE_LIMITE = 2; // desvio superior a 2 em relação à média, conforme o artigo
+
+async function carregarAnomalias() {
+    let anomalias;
+    if (modoLocal) {
+        anomalias = calcularAnomaliasLocais();
+    } else {
+        const resAnomalias = await fetch('/api/anomalias?dias=7');
+        anomalias = await resAnomalias.json();
+    }
+    renderizarAnomalias(anomalias);
+}
+
+function calcularAnomaliasLocais() {
+    const anomalias = [];
+
+    ambientesMonitorados.forEach(ambiente => {
+        const leituras = leiturasLocais.filter(l => l.ambiente_id === ambiente.id);
+        if (leituras.length < 2) return;
+
+        const valores = leituras.map(l => l.potencia_w);
+        const media = valores.reduce((total, v) => total + v, 0) / valores.length;
+        const variancia = valores.reduce((total, v) => total + (v - media) ** 2, 0) / valores.length;
+        const desvio = Math.sqrt(variancia);
+        if (desvio === 0) return;
+
+        leituras.forEach(l => {
+            const zScore = (l.potencia_w - media) / desvio;
+            if (Math.abs(zScore) > Z_SCORE_LIMITE) {
+                anomalias.push({
+                    ambiente_nome: ambiente.nome,
+                    ts: l.ts,
+                    potencia_w: l.potencia_w,
+                    z_score: Number(zScore.toFixed(2))
+                });
+            }
+        });
+    });
+
+    return anomalias.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+}
+
+function renderizarAnomalias(anomalias) {
+    const corpoAnomalias = document.getElementById('corpo-anomalias');
+    if (corpoAnomalias) {
+        corpoAnomalias.innerHTML = '';
+        if (anomalias.length === 0) {
+            corpoAnomalias.innerHTML = '<tr><td colspan="4">Nenhuma anomalia detectada no período.</td></tr>';
+        } else {
+            anomalias.slice(0, 15).forEach(a => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${a.ambiente_nome}</td>
+                    <td>${new Date(a.ts).toLocaleString('pt-BR')}</td>
+                    <td>${a.potencia_w.toFixed(2)}</td>
+                    <td class="status-alerta">z = ${a.z_score}</td>
+                `;
+                corpoAnomalias.appendChild(row);
+            });
+        }
+    }
+
+    const canvas = document.getElementById('graficoAnomalias');
+    if (!canvas) return;
+
+    const tema = obterTemaGrafico();
+    const pontos = anomalias.map(a => ({ x: new Date(a.ts).getTime(), y: a.potencia_w }));
+
+    if (graficoAnomalias) {
+        graficoAnomalias.destroy();
+    }
+
+    graficoAnomalias = new Chart(canvas.getContext('2d'), {
+        type: 'scatter',
+        data: {
+            datasets: [{
+                label: 'Anomalias (|z| > 2)',
+                data: pontos,
+                backgroundColor: '#e74c3c',
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    type: 'linear',
+                    ticks: {
+                        color: tema.texto,
+                        callback: (valor) => new Date(valor).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                    },
+                    grid: { color: tema.grade }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Potência (W)', color: tema.texto },
+                    ticks: { color: tema.texto },
+                    grid: { color: tema.grade }
+                }
+            },
+            plugins: {
+                legend: { labels: { color: tema.texto } },
+                tooltip: {
+                    callbacks: {
+                        title: (itens) => new Date(itens[0].parsed.x).toLocaleString('pt-BR')
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ----------------- MAPA DE CALOR (Hora x Dia da Semana) -----------------
+
+const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
+async function carregarHeatmap() {
+    let matriz, diasSemana;
+
+    try {
+        if (modoLocal) {
+            ({ matriz, diasSemana } = calcularHeatmapLocal());
+        } else {
+            const resHeatmap = await fetch('/api/relatorio/heatmap?dias=30');
+            if (!resHeatmap.ok) throw new Error('Resposta inválida do servidor');
+            const dados = await resHeatmap.json();
+            matriz = dados.matriz;
+            diasSemana = dados.dias_semana;
+        }
+    } catch (err) {
+        console.warn('Falha ao carregar heatmap do servidor — usando fallback local/exemplo:', err);
+
+        // Se houver leituras locais, calcule a matriz a partir delas
+        if (leiturasLocais && leiturasLocais.length > 0) {
+            ({ matriz, diasSemana } = calcularHeatmapLocal());
+        } else {
+            // Gera uma matriz de exemplo para exibição estática (para GitHub Pages)
+            matriz = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => null));
+            // Preencher algumas células com valores demonstrativos (padrão horário de uso)
+            for (let d = 0; d < 7; d++) {
+                for (let h = 7; h <= 20; h++) {
+                    // simula variação por dia/hora
+                    const base = 80 + Math.round((Math.sin((h - 6) / 14 * Math.PI) * 220) + Math.random() * 40);
+                    matriz[d][h] = base + d * 8; // pequeno ajuste por dia
+                }
+            }
+            diasSemana = DIAS_SEMANA;
+        }
+    }
+
+    renderizarHeatmap(matriz, diasSemana);
+}
+
+function calcularHeatmapLocal() {
+    const soma = Array.from({ length: 7 }, () => Array(24).fill(0));
+    const contagem = Array.from({ length: 7 }, () => Array(24).fill(0));
+
+    leiturasLocais.forEach(l => {
+        const data = new Date(l.ts);
+        const diaSemana = (data.getDay() + 6) % 7; // getDay: 0=domingo -> 0=segunda ... 6=domingo
+        const hora = data.getHours();
+        soma[diaSemana][hora] += l.potencia_w;
+        contagem[diaSemana][hora] += 1;
+    });
+
+    const matriz = soma.map((linha, dia) =>
+        linha.map((total, hora) => contagem[dia][hora] > 0 ? total / contagem[dia][hora] : null)
+    );
+
+    return { matriz, diasSemana: DIAS_SEMANA };
+}
+
+function corParaValor(valor, minVal, maxVal) {
+    if (valor === null || valor === undefined) return null;
+    if (maxVal === minVal) return 'hsl(200, 70%, 55%)';
+    const t = (valor - minVal) / (maxVal - minVal); // 0 (menor consumo) .. 1 (maior consumo)
+    const matiz = 210 - t * 210; // azul (frio/baixo consumo) -> vermelho (quente/alto consumo)
+    return `hsl(${matiz}, 78%, ${58 - t * 16}%)`;
+}
+
+function renderizarHeatmap(matriz, diasSemana) {
+    const container = document.getElementById('heatmap-container');
+    if (!container) return;
+
+    const valores = matriz.flat().filter(v => v !== null && v !== undefined);
+    const minVal = valores.length ? Math.min(...valores) : 0;
+    const maxVal = valores.length ? Math.max(...valores) : 0;
+
+    let html = '<table class="heatmap-tabela"><thead><tr><th>Hora</th>';
+    for (let hora = 0; hora < 24; hora++) {
+        html += `<th>${hora}h</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    matriz.forEach((linha, i) => {
+        html += `<tr><th>${diasSemana[i]}</th>`;
+        linha.forEach(valor => {
+            const cor = corParaValor(valor, minVal, maxVal);
+            if (cor === null) {
+                html += '<td class="heatmap-celula vazia">—</td>';
+            } else {
+                const texto = Math.round(valor);
+                html += `<td class="heatmap-celula" style="background-color:${cor}" title="${texto} W">${texto}</td>`;
+            }
+        });
+        html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+>>>>>>> 2fc682e (Initial commit)
 function gerarLeituraAleatoria(ambienteId) {
     const tensao = 127 + (Math.random() - 0.5) * 3;
     const potencia = 100 + Math.random() * 700;
@@ -394,6 +625,7 @@ function obterTemaGrafico() {
 }
 
 function atualizarTemaGrafico() {
+<<<<<<< HEAD
     if (!meuGrafico) {
         return;
     }
@@ -404,6 +636,27 @@ function atualizarTemaGrafico() {
     meuGrafico.options.scales.x.grid.color = tema.grade;
     meuGrafico.options.scales.y.grid.color = tema.grade;
     meuGrafico.update();
+=======
+    const tema = obterTemaGrafico();
+
+    if (meuGrafico) {
+        meuGrafico.options.scales.x.ticks.color = tema.texto;
+        meuGrafico.options.scales.y.ticks.color = tema.texto;
+        meuGrafico.options.scales.x.grid.color = tema.grade;
+        meuGrafico.options.scales.y.grid.color = tema.grade;
+        meuGrafico.update();
+    }
+
+    if (graficoAnomalias) {
+        graficoAnomalias.options.scales.x.ticks.color = tema.texto;
+        graficoAnomalias.options.scales.y.ticks.color = tema.texto;
+        graficoAnomalias.options.scales.x.grid.color = tema.grade;
+        graficoAnomalias.options.scales.y.grid.color = tema.grade;
+        graficoAnomalias.options.scales.y.title.color = tema.texto;
+        graficoAnomalias.options.plugins.legend.labels.color = tema.texto;
+        graficoAnomalias.update();
+    }
+>>>>>>> 2fc682e (Initial commit)
 }
 
 async function carregarGrafico(ambienteId) {
