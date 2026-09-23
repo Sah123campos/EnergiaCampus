@@ -1,31 +1,29 @@
 // Função para buscar os dados da API
 async function carregarDados() {
     try {
-        // 1. Buscar resumo mensal
         const resMensal = await fetch('/api/relatorio/mensal');
         const dadosMensais = await resMensal.json();
-        
+
         document.getElementById('consumo-mes').innerText = dadosMensais.consumo_atual_kwh.toFixed(2);
         document.getElementById('media-potencia').innerText = dadosMensais.media_potencia_w.toFixed(2);
         document.getElementById('total-leituras').innerText = dadosMensais.total_leituras;
-        
+
         let variacao = dadosMensais.variacao_percentual;
         let elVariacao = document.getElementById('variacao');
         elVariacao.innerText = variacao.toFixed(2) + '%';
-        // Mudar cor da variação se for negativa ou positiva
+
         if (variacao > 0) {
-            elVariacao.style.color = '#e74c3c'; // Vermelho (gastou mais)
+            elVariacao.style.color = '#e74c3c';
         } else {
-            elVariacao.style.color = '#27ae60'; // Verde (economizou)
+            elVariacao.style.color = '#27ae60';
         }
 
-        // 2. Buscar lista de ambientes
         const resAmbientes = await fetch('/api/ambientes');
         const ambientes = await resAmbientes.json();
         ambientesMonitorados = ambientes;
-        
+
         const corpoTabela = document.getElementById('corpo-tabela');
-        corpoTabela.innerHTML = ''; // Limpa a tabela antes de inserir
+        corpoTabela.innerHTML = '';
 
         ambientes.forEach(amb => {
             const row = document.createElement('tr');
@@ -39,31 +37,23 @@ async function carregarDados() {
             corpoTabela.appendChild(row);
         });
 
-        // 3. Buscar série temporal do primeiro ambiente para o gráfico
         if (ambientes.length > 0) {
             const primeiroAmbienteId = ambientes[0].id;
             carregarGrafico(primeiroAmbienteId);
         }
 
-        // 4. Buscar análise técnica (tensão, potência ativa, fator de potência)
         await carregarAnaliseTecnica();
-
-<<<<<<< HEAD
-=======
-        // 5. Buscar anomalias (z-score) e matriz de calor hora x dia da semana
         await carregarAnomalias();
         await carregarHeatmap();
-
->>>>>>> 2fc682e (Initial commit)
     } catch (error) {
-        console.error("Erro ao carregar dados:", error);
+        console.error('Erro ao carregar dados:', error);
         ativarModoLocal();
         renderizarDadosLocais();
     }
 }
 
-// Função para desenhar o gráfico
 let meuGrafico;
+let graficoAnomalias;
 let intervaloSimulacao;
 let intervaloAtualizacaoDashboard;
 let simulacaoAtiva = false;
@@ -111,21 +101,18 @@ function renderizarDadosLocais() {
     });
 
     renderizarAnaliseTecnica(calcularAnaliseLocal());
-    carregarGrafico(ambientesMonitorados[0].id);
-<<<<<<< HEAD
-=======
+    if (ambientesMonitorados.length > 0) {
+        carregarGrafico(ambientesMonitorados[0].id);
+    }
     carregarAnomalias();
     carregarHeatmap();
->>>>>>> 2fc682e (Initial commit)
 }
 
-// ----------------- ANÁLISE TÉCNICA (Tensão, Potência Ativa, Fator de Potência) -----------------
-
 const TENSAO_NOMINAL = 127.0;
-const TENSAO_TOLERANCIA_PCT = 0.05; // faixa adequada: ±5% (ANEEL/Prodist, simplificado)
-const FP_MINIMO = 0.85; // limite crítico para fator de potência
-const FP_MONITORAR = 0.92; // faixa de atenção
-const POTENCIA_ANOMALIA_FATOR = 1.6; // pico 60% acima da média = anomalia de demanda
+const TENSAO_TOLERANCIA_PCT = 0.05;
+const FP_MINIMO = 0.85;
+const FP_MONITORAR = 0.92;
+const POTENCIA_ANOMALIA_FATOR = 1.6;
 
 function formatarHora(ts) {
     return ts ? new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--';
@@ -188,6 +175,8 @@ function renderizarAnaliseTecnica(lista) {
     const corpoTensao = document.getElementById('corpo-tensao');
     const corpoPotencia = document.getElementById('corpo-potencia');
     const corpoFp = document.getElementById('corpo-fp');
+
+    if (!corpoTensao || !corpoPotencia || !corpoFp) return;
 
     corpoTensao.innerHTML = '';
     corpoPotencia.innerHTML = '';
@@ -277,12 +266,7 @@ function calcularAnaliseLocal() {
     });
 }
 
-<<<<<<< HEAD
-=======
-// ----------------- DETECÇÃO DE ANOMALIAS (Z-Score) -----------------
-
-let graficoAnomalias;
-const Z_SCORE_LIMITE = 2; // desvio superior a 2 em relação à média, conforme o artigo
+const Z_SCORE_LIMITE = 2;
 
 async function carregarAnomalias() {
     let anomalias;
@@ -395,8 +379,6 @@ function renderizarAnomalias(anomalias) {
     });
 }
 
-// ----------------- MAPA DE CALOR (Hora x Dia da Semana) -----------------
-
 const DIAS_SEMANA = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
 async function carregarHeatmap() {
@@ -415,18 +397,14 @@ async function carregarHeatmap() {
     } catch (err) {
         console.warn('Falha ao carregar heatmap do servidor — usando fallback local/exemplo:', err);
 
-        // Se houver leituras locais, calcule a matriz a partir delas
         if (leiturasLocais && leiturasLocais.length > 0) {
             ({ matriz, diasSemana } = calcularHeatmapLocal());
         } else {
-            // Gera uma matriz de exemplo para exibição estática (para GitHub Pages)
             matriz = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => null));
-            // Preencher algumas células com valores demonstrativos (padrão horário de uso)
             for (let d = 0; d < 7; d++) {
                 for (let h = 7; h <= 20; h++) {
-                    // simula variação por dia/hora
                     const base = 80 + Math.round((Math.sin((h - 6) / 14 * Math.PI) * 220) + Math.random() * 40);
-                    matriz[d][h] = base + d * 8; // pequeno ajuste por dia
+                    matriz[d][h] = base + d * 8;
                 }
             }
             diasSemana = DIAS_SEMANA;
@@ -442,7 +420,7 @@ function calcularHeatmapLocal() {
 
     leiturasLocais.forEach(l => {
         const data = new Date(l.ts);
-        const diaSemana = (data.getDay() + 6) % 7; // getDay: 0=domingo -> 0=segunda ... 6=domingo
+        const diaSemana = (data.getDay() + 6) % 7;
         const hora = data.getHours();
         soma[diaSemana][hora] += l.potencia_w;
         contagem[diaSemana][hora] += 1;
@@ -458,8 +436,8 @@ function calcularHeatmapLocal() {
 function corParaValor(valor, minVal, maxVal) {
     if (valor === null || valor === undefined) return null;
     if (maxVal === minVal) return 'hsl(200, 70%, 55%)';
-    const t = (valor - minVal) / (maxVal - minVal); // 0 (menor consumo) .. 1 (maior consumo)
-    const matiz = 210 - t * 210; // azul (frio/baixo consumo) -> vermelho (quente/alto consumo)
+    const t = (valor - minVal) / (maxVal - minVal);
+    const matiz = 210 - t * 210;
     return `hsl(${matiz}, 78%, ${58 - t * 16}%)`;
 }
 
@@ -495,7 +473,6 @@ function renderizarHeatmap(matriz, diasSemana) {
     container.innerHTML = html;
 }
 
->>>>>>> 2fc682e (Initial commit)
 function gerarLeituraAleatoria(ambienteId) {
     const tensao = 127 + (Math.random() - 0.5) * 3;
     const potencia = 100 + Math.random() * 700;
@@ -527,7 +504,6 @@ async function gerarDadosSimulados() {
             ambientesMonitorados = [];
         }
 
-        // Servidor sem ambientes cadastrados (banco vazio) é tratado como indisponível
         if (ambientesMonitorados.length === 0) {
             ativarModoLocal();
         }
@@ -578,6 +554,7 @@ function iniciarAtualizacaoTempoReal() {
 
 function configurarSimulacao() {
     const botaoSimulacao = document.getElementById('alternar-simulacao');
+    if (!botaoSimulacao) return;
 
     function atualizarBotao(simulando) {
         botaoSimulacao.classList.toggle('running', simulando);
@@ -625,18 +602,6 @@ function obterTemaGrafico() {
 }
 
 function atualizarTemaGrafico() {
-<<<<<<< HEAD
-    if (!meuGrafico) {
-        return;
-    }
-
-    const tema = obterTemaGrafico();
-    meuGrafico.options.scales.x.ticks.color = tema.texto;
-    meuGrafico.options.scales.y.ticks.color = tema.texto;
-    meuGrafico.options.scales.x.grid.color = tema.grade;
-    meuGrafico.options.scales.y.grid.color = tema.grade;
-    meuGrafico.update();
-=======
     const tema = obterTemaGrafico();
 
     if (meuGrafico) {
@@ -656,7 +621,6 @@ function atualizarTemaGrafico() {
         graficoAnomalias.options.plugins.legend.labels.color = tema.texto;
         graficoAnomalias.update();
     }
->>>>>>> 2fc682e (Initial commit)
 }
 
 async function carregarGrafico(ambienteId) {
@@ -670,12 +634,15 @@ async function carregarGrafico(ambienteId) {
         dadosSerie = await resSerie.json();
     }
 
-    const labels = dadosSerie.map(d => new Date(d.ts).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}));
+    if (!dadosSerie || dadosSerie.length === 0) {
+        return;
+    }
+
+    const labels = dadosSerie.map(d => new Date(d.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
     const valores = dadosSerie.map(d => d.w);
 
     const ctx = document.getElementById('graficoConsumo').getContext('2d');
 
-    // Destruir gráfico antigo se existir
     if (meuGrafico) {
         meuGrafico.destroy();
     }
@@ -726,6 +693,8 @@ function atualizarRelogio() {
 
 function configurarTema() {
     const botaoTema = document.getElementById('alternar-tema');
+    if (!botaoTema) return;
+
     const modoNoturnoSalvo = localStorage.getItem('modo-noturno') === 'true';
 
     function aplicarTema(modoNoturno) {
@@ -749,7 +718,6 @@ function iniciarRelogioReal() {
     setInterval(atualizarRelogio, 1000);
 }
 
-// Chamar a função quando a página carregar
 document.addEventListener('DOMContentLoaded', () => {
     configurarTema();
     configurarSimulacao();
